@@ -1,5 +1,7 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
+import { createServiceClient } from '@/lib/supabase/server';
+import { InvoiceTable } from '@/components/billing/InvoiceTable';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -13,6 +15,13 @@ export default async function BillingPage() {
   if (!user) redirect('/login');
 
   const { data: subscription } = await supabase.from('subscriptions').select('*').eq('user_id', user.id).single();
+
+  const serviceClient = await createServiceClient();
+  const { data: invoices } = await serviceClient
+    .from('invoices')
+    .select('id, invoice_number, plan_name, amount_incl_vat, status, issued_at')
+    .eq('user_id', user.id)
+    .order('issued_at', { ascending: false });
 
   const plan = subscription?.plan || 'trial';
   const status = subscription?.status || 'trialing';
@@ -97,6 +106,13 @@ export default async function BillingPage() {
       </Card>
 
       {/* Cancel */}
+      {invoices && invoices.length > 0 && (
+        <Card>
+          <h3 className="font-semibold text-white mb-4">Invoices</h3>
+          <InvoiceTable invoices={invoices} />
+        </Card>
+      )}
+
       {status !== 'canceled' && plan !== 'trial' && (
         <Card>
           <h3 className="font-semibold text-white mb-2">Cancel Subscription</h3>
