@@ -48,12 +48,48 @@ export async function POST(req: NextRequest) {
       }
       case 'invoice.payment_succeeded': {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const invoice = event.data.object as any;
-        const subId = invoice.subscription as string;
+        const stripeInvoice = event.data.object as any;
+        const subId = stripeInvoice.subscription as string;
         await supabase.from('subscriptions').update({
           status: 'active',
           updated_at: new Date().toISOString(),
         }).eq('stripe_subscription_id', subId);
+
+        // Create VAT invoice record
+        const amountExclVat = Math.round(stripeInvoice.amount_paid / 1.23);
+        const vatAmount = stripeInvoice.amount_paid - amountExclVat;
+        const customerId = stripeInvoice.customer as string;
+
+        const { data: sub } = await supabase
+          .from('subscriptions')
+          .select('user_id, plan')
+          .eq('stripe_subscription_id', subId)
+          .single();
+
+        if (sub?.user_id) {
+          const { data: user } = await supabase
+            .from('users')
+            .select('email, full_name')
+            .eq('id', sub.user_id)
+            .single();
+
+          await supabase.from('invoices').insert({
+            user_id: sub.user_id,
+            stripe_invoice_id: stripeInvoice.id,
+            stripe_payment_intent_id: stripeInvoice.payment_intent,
+            customer_name: user?.full_name,
+            customer_email: user?.email,
+            plan_name: sub.plan,
+            description: `SmartDesk.ai ${sub.plan?.replace(/_/g, ' ')} Plan`,
+            amount_excl_vat: amountExclVat,
+            vat_rate: 0.23,
+            vat_amount: vatAmount,
+            amount_incl_vat: stripeInvoice.amount_paid,
+            status: 'paid',
+            paid_at: new Date().toISOString(),
+          });
+        }
+        void customerId;
         break;
       }
       case 'invoice.payment_failed': {

@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { Sidebar } from '@/components/layout/Sidebar';
+import TrialExpiredGate from '@/components/billing/TrialExpiredGate';
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
@@ -11,9 +12,13 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const [{ data: conversations }, { data: usage }, { data: subscription }, { data: profile }] = await Promise.all([
     supabase.from('conversations').select('id, title, created_at').eq('user_id', user.id).order('updated_at', { ascending: false }).limit(20),
     supabase.from('usage_tracking').select('queries_used').eq('user_id', user.id).eq('month', new Date().toISOString().slice(0, 7)).single(),
-    supabase.from('subscriptions').select('plan, status').eq('user_id', user.id).single(),
+    supabase.from('subscriptions').select('plan, status, trial_ends_at').eq('user_id', user.id).single(),
     supabase.from('users').select('full_name, email').eq('id', user.id).single(),
   ]);
+
+  const trialExpired = subscription?.status === 'trialing' &&
+    subscription?.trial_ends_at &&
+    new Date(subscription.trial_ends_at) < new Date();
 
   const plan = subscription?.plan || 'trial';
   const queriesUsed = usage?.queries_used || 0;
@@ -29,7 +34,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
         userEmail={profile?.email || user.email}
         plan={plan}
       />
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 overflow-auto relative">
+        {trialExpired && <TrialExpiredGate />}
         {children}
       </main>
     </div>
